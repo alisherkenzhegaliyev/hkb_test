@@ -5,6 +5,7 @@ WORKDIR /app
 # System deps for docling (OCR + PDF rendering) and Playwright
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    zlib1g-dev \
     poppler-utils \
     tesseract-ocr \
     tesseract-ocr-rus \
@@ -14,6 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+# Install CPU-only torch first to prevent pip from pulling in the full CUDA stack
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Playwright Chromium browser

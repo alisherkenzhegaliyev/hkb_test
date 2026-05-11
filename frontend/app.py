@@ -37,7 +37,7 @@ def api_get(path: str, params: dict | None = None, timeout: int = 30):
         return None, str(e)
 
 
-def api_post(path: str, json_data: dict | None = None, files=None, timeout: int = 120):
+def api_post(path: str, json_data: dict | None = None, files=None, timeout: int | None = None):
     try:
         kwargs: dict = {"timeout": timeout}
         if files:
@@ -89,7 +89,7 @@ with st.sidebar:
     st.markdown("**Sync vacancies from hh.kz**")
     if st.button("Sync from hh.kz", use_container_width=True):
         with st.spinner("Scraping hh.kz — this may take 30–60 s..."):
-            data, err = api_post("/vacancies/scrape", json_data={}, timeout=120)
+            data, err = api_post("/vacancies/scrape", json_data={}, timeout=300)
         if err:
             st.error(err)
         else:
@@ -122,15 +122,22 @@ with tab_vacancies:
             with st.expander(f"#{v.get('id')} — {v.get('title', 'Untitled')}"):
                 st.markdown(f"**Link:** {link}")
                 st.markdown(f"**Scraped:** {str(v.get('scraped_at', ''))[:19]}")
+                meta = v.get("meta") or {}
+                if meta:
+                    cols = st.columns(3)
+                    if exp := meta.get("experience"):
+                        cols[0].markdown(f"**Experience:** {exp}")
+                    if sal := meta.get("salary"):
+                        cols[1].markdown(f"**Salary:** {sal}")
+                    if conds := meta.get("conditions"):
+                        cols[2].markdown("**Conditions:** " + " · ".join(conds))
                 reqs = v.get("requirements") or []
                 if reqs:
-                    st.markdown("**Requirements:**")
-                    for r in reqs:
-                        st.markdown(f"- {r}")
+                    st.markdown("**Key skills:** " + " · ".join(f"`{r}`" for r in reqs))
                 desc = v.get("description", "")
                 if desc:
-                    st.markdown("**Description (excerpt):**")
-                    st.write(desc[:800] + ("..." if len(desc) > 800 else ""))
+                    st.markdown("**Description:**")
+                    st.write(desc)
         st.caption(f"Total: {len(vacancies)} vacancies")
 
 # ── TAB 2: UPLOAD RESUME ─────────────────────────────────────────────────────
@@ -140,7 +147,7 @@ with tab_upload:
     if uploaded is not None:
         with st.spinner(f"Parsing {uploaded.name}..."):
             files = {"file": (uploaded.name, uploaded.getvalue(), uploaded.type or "application/octet-stream")}
-            data, err = api_post("/candidates/upload", files=files, timeout=120)
+            data, err = api_post("/candidates/upload", files=files)
         if err:
             st.error(f"Upload failed: {err}")
         else:
@@ -177,6 +184,11 @@ with tab_upload:
 with tab_match:
     st.header("Match Candidates to a Vacancy")
 
+    if "match_results" not in st.session_state:
+        st.session_state.match_results = None
+        st.session_state.match_error = None
+        st.session_state.match_method = None
+
     vacancies_for_match, err_v = api_get("/vacancies/")
     if err_v:
         st.error(err_v)
@@ -200,66 +212,70 @@ with tab_match:
                     params={"job_id": selected_job_id, "method": method, "top_k": top_k},
                     timeout=180,
                 )
-            if err_r:
-                st.error(f"Matching failed: {err_r}")
-            elif not results_data:
-                st.warning("No results returned.")
+            st.session_state.match_error = err_r
+            st.session_state.match_results = results_data
+            st.session_state.match_method = method
+
+        if st.session_state.match_error:
+            st.error(f"Matching failed: {st.session_state.match_error}")
+        elif st.session_state.match_results is not None:
+            results_data = st.session_state.match_results
+            used_method = st.session_state.match_method
+            match_results = results_data.get("results") or []
+            if not match_results:
+                st.info("No candidates matched. Upload resumes first.")
             else:
-                match_results = results_data.get("results") or []
-                if not match_results:
-                    st.info("No candidates matched. Upload resumes first.")
-                else:
-                    st.success(f"Found {len(match_results)} candidate(s) via **{method}** method.")
-                    st.divider()
-                    for rank, item in enumerate(match_results, start=1):
-                        cand = item.get("candidate") or {}
-                        name = cand.get("name") or "Unknown"
-                        email = cand.get("email") or "—"
-                        tfidf_s = item.get("tfidf_score")
-                        semantic_s = item.get("semantic_score")
-                        llm_s = item.get("llm_score")
-                        explanation = item.get("llm_explanation") or ""
-                        strengths = item.get("strengths") or []
-                        gaps = item.get("gaps") or []
+                st.success(f"Found {len(match_results)} candidate(s) via **{used_method}** method.")
+                st.divider()
+                for rank, item in enumerate(match_results, start=1):
+                    cand = item.get("candidate") or {}
+                    name = cand.get("name") or "Unknown"
+                    email = cand.get("email") or "—"
+                    tfidf_s = item.get("tfidf_score")
+                    semantic_s = item.get("semantic_score")
+                    llm_s = item.get("llm_score")
+                    explanation = item.get("llm_explanation") or ""
+                    strengths = item.get("strengths") or []
+                    gaps = item.get("gaps") or []
 
-                        with st.container():
-                            st.markdown(f"### #{rank} — {name}")
-                            c1, c2 = st.columns([1, 2])
-                            with c1:
-                                st.markdown(f"**Email:** {email}")
-                                st.markdown(f"**Phone:** {cand.get('phone') or '—'}")
-                                exp = cand.get("experience_years")
-                                st.markdown(f"**Experience:** {f'{exp:.1f} yrs' if exp is not None else '—'}")
-                                skills = cand.get("skills") or []
-                                if skills:
-                                    st.markdown("**Skills:** " + " · ".join(f"`{s}`" for s in skills[:10]))
-                            with c2:
-                                if any(s is not None for s in [tfidf_s, semantic_s, llm_s]):
-                                    cols = st.columns(3)
-                                    if tfidf_s is not None:
-                                        with cols[0]:
-                                            score_bar("TF-IDF", tfidf_s)
-                                    if semantic_s is not None:
-                                        with cols[1]:
-                                            score_bar("Semantic", semantic_s)
-                                    if llm_s is not None:
-                                        with cols[2]:
-                                            score_bar("LLM", llm_s)
+                    with st.container():
+                        st.markdown(f"### #{rank} — {name}")
+                        c1, c2 = st.columns([1, 2])
+                        with c1:
+                            st.markdown(f"**Email:** {email}")
+                            st.markdown(f"**Phone:** {cand.get('phone') or '—'}")
+                            exp = cand.get("experience_years")
+                            st.markdown(f"**Experience:** {f'{exp:.1f} yrs' if exp is not None else '—'}")
+                            skills = cand.get("skills") or []
+                            if skills:
+                                st.markdown("**Skills:** " + " · ".join(f"`{s}`" for s in skills[:10]))
+                        with c2:
+                            if any(s is not None for s in [tfidf_s, semantic_s, llm_s]):
+                                cols = st.columns(3)
+                                if tfidf_s is not None:
+                                    with cols[0]:
+                                        score_bar("TF-IDF", tfidf_s)
+                                if semantic_s is not None:
+                                    with cols[1]:
+                                        score_bar("Semantic", semantic_s)
+                                if llm_s is not None:
+                                    with cols[2]:
+                                        score_bar("LLM", llm_s)
 
-                            if explanation or strengths or gaps:
-                                with st.expander("LLM Analysis — Strengths & Gaps"):
-                                    if explanation:
-                                        st.markdown("**Explanation:**")
-                                        st.write(explanation)
-                                    if strengths:
-                                        st.markdown("**Strengths:**")
-                                        for s in strengths:
-                                            st.markdown(f"- {s}")
-                                    if gaps:
-                                        st.markdown("**Gaps:**")
-                                        for g in gaps:
-                                            st.markdown(f"- {g}")
-                            st.divider()
+                        if explanation or strengths or gaps:
+                            with st.expander("LLM Analysis — Strengths & Gaps"):
+                                if explanation:
+                                    st.markdown("**Explanation:**")
+                                    st.write(explanation)
+                                if strengths:
+                                    st.markdown("**Strengths:**")
+                                    for s in strengths:
+                                        st.markdown(f"- {s}")
+                                if gaps:
+                                    st.markdown("**Gaps:**")
+                                    for g in gaps:
+                                        st.markdown(f"- {g}")
+                        st.divider()
 
 # ── TAB 4: STATUS ────────────────────────────────────────────────────────────
 with tab_status:

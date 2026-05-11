@@ -7,7 +7,7 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-EMPLOYER_URL = f"https://almaty.hh.kz/employer/{settings.employer_id}?tab=VACANCIES"
+EMPLOYER_URL = f"https://almaty.hh.kz/employer/{settings.employer_id}?tab=VACANCIES&area=160&area=40"
 
 
 async def scrape_vacancies() -> list[dict]:
@@ -27,8 +27,9 @@ async def scrape_vacancies() -> list[dict]:
         page = await context.new_page()
 
         logger.info("Navigating to employer page: %s", EMPLOYER_URL)
-        await page.goto(EMPLOYER_URL, wait_until="networkidle", timeout=60_000)
+        await page.goto(EMPLOYER_URL, wait_until="domcontentloaded", timeout=60_000)
         await page.wait_for_timeout(3000)
+
 
         vacancy_links: list[str] = []
         while True:
@@ -69,14 +70,14 @@ async def scrape_vacancies() -> list[dict]:
 async def _scrape_vacancy_page(context, url: str) -> dict | None:
     page = await context.new_page()
     try:
-        await page.goto(url, wait_until="networkidle", timeout=30_000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
         await page.wait_for_timeout(1000)
 
         hh_id = _extract_hh_id(url)
 
         # Title
         title = ""
-        for sel in ["h1[data-qa='vacancy-title']", "h1.vacancy-title", "h1"]:
+        for sel in ["[data-qa='vacancy-title']", "h1"]:
             el = page.locator(sel).first
             if await el.count():
                 title = (await el.inner_text()).strip()
@@ -102,13 +103,27 @@ async def _scrape_vacancy_page(context, url: str) -> dict | None:
                         requirements.append(txt)
                 break
 
-        # Salary
-        salary = None
-        for sel in ["[data-qa='vacancy-salary']", ".vacancy-salary"]:
-            el = page.locator(sel).first
-            if await el.count():
-                salary = (await el.inner_text()).strip()
-                break
+        # Card metadata
+        async def _text(qa: str) -> str | None:
+            el = page.locator(f"[data-qa='{qa}']").first
+            return (await el.inner_text()).strip() if await el.count() else None
+
+        meta: dict = {}
+        if v := await _text("vacancy-experience"):
+            meta["experience"] = v
+        if v := await _text("vacancy-salary"):
+            meta["salary"] = v
+
+        # Employment type / schedule — hh.kz puts these in <p> tags inside the card
+        employment_els = page.locator("p.vacancy-description-list-item")
+        emp_count = await employment_els.count()
+        extras: list[str] = []
+        for i in range(emp_count):
+            txt = (await employment_els.nth(i).inner_text()).strip()
+            if txt:
+                extras.append(txt)
+        if extras:
+            meta["conditions"] = extras
 
         if not title:
             logger.warning("No title found for %s — skipping", url)
@@ -119,7 +134,7 @@ async def _scrape_vacancy_page(context, url: str) -> dict | None:
             "title": title,
             "description": description,
             "requirements": requirements,
-            "salary": salary,
+            "meta": meta,
             "url": url,
         }
     finally:

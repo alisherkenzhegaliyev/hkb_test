@@ -28,11 +28,10 @@ async def rank_candidates(
     for c in candidates:
         user_msg = (
             f"Vacancy: {vacancy.get('title', '')}\n\n"
-            f"{vacancy.get('description', '')[:1000]}\n\n"
+            f"{vacancy.get('description', '')}\n\n"
             f"Candidate: {c.get('name') or 'Unknown'}\n"
-            f"Skills: {c.get('skills', [])}\n"
             f"Experience: {c.get('experience_years') or '?'} years\n\n"
-            f"Resume excerpt:\n{c.get('raw_text', '')[:1500]}"
+            f"Full resume:\n{c.get('raw_text', '')}"
         )
         try:
             resp = await client.chat.completions.create(

@@ -51,6 +51,20 @@ docker-compose up --build
 - **API docs:** http://localhost:8000/docs
 - **Streamlit UI:** http://localhost:8501
 
+> **Note on `make` commands:** The `Makefile` provides shortcuts for common operations but requires `make`, which is not available by default on Windows. Windows users should use **WSL** or **Git Bash**, or run the equivalent Docker commands directly (see below).
+
+## Common Commands
+
+| Task | Mac/Linux (`make`) | Windows / raw Docker |
+|---|---|---|
+| Start all services | `make up` | `docker-compose up -d` |
+| Build and start | `make build` | `docker-compose up --build` |
+| Stop all services | `make down` | `docker-compose down` |
+| Postgres only (local dev) | `make db` | `docker-compose up -d postgres` |
+| View API logs | `make logs-api` | `docker-compose logs -f api` |
+| View all logs | `make logs` | `docker-compose logs -f` |
+| Open API shell | `make shell-api` | `docker-compose exec api bash` |
+
 ## Environment Variables
 
 | Variable | Required | Description |

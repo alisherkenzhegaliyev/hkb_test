@@ -37,6 +37,7 @@ async def scrape(db: AsyncSession = Depends(get_db)):
                 title=vac["title"],
                 description=vac["description"],
                 requirements=vac.get("requirements", []),
+                meta=vac.get("meta", {}),
                 url=vac["url"],
                 scraped_at=datetime.now(timezone.utc),
             )
@@ -46,6 +47,7 @@ async def scrape(db: AsyncSession = Depends(get_db)):
             db_vac.title = vac["title"]
             db_vac.description = vac["description"]
             db_vac.requirements = vac.get("requirements", [])
+            db_vac.meta = vac.get("meta", {})
             db_vac.url = vac["url"]
             db_vac.scraped_at = datetime.now(timezone.utc)
 

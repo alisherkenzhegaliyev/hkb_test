@@ -17,7 +17,7 @@ class Candidate(Base):
     education = Column(Text, nullable=True)
     embedding = Column(JSON, nullable=True)       # BGE-M3 dense vector
     source_file = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     match_results = relationship("MatchResult", back_populates="candidate")
 
@@ -29,10 +29,11 @@ class Vacancy(Base):
     hh_id = Column(String, unique=True, index=True, nullable=True)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=False)
-    requirements = Column(JSON, default=list)     # extracted requirement bullets
+    requirements = Column(JSON, default=list)     # key skills/tags
+    meta = Column(JSON, default=dict)             # experience, schedule, employment, salary from card
     embedding = Column(JSON, nullable=True)       # BGE-M3 dense vector
     url = Column(String, nullable=True)
-    scraped_at = Column(DateTime, default=datetime.utcnow)
+    scraped_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     match_results = relationship("MatchResult", back_populates="vacancy")
 
@@ -50,7 +51,7 @@ class MatchResult(Base):
     strengths = Column(JSON, default=list)
     gaps = Column(JSON, default=list)
     method = Column(String, nullable=False)       # "funnel", "semantic", "tfidf", "llm"
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     candidate = relationship("Candidate", back_populates="match_results")
     vacancy = relationship("Vacancy", back_populates="match_results")

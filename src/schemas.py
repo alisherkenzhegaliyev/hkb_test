@@ -23,6 +23,7 @@ class VacancyOut(BaseModel):
     title: str
     description: str
     requirements: list
+    meta: Optional[dict] = None
     url: Optional[str]
     scraped_at: datetime
 
