@@ -233,3 +233,4 @@ data/resumes/
 .cache/
 .DS_Store
 notebooks/.ipynb_checkpoints/
+CLAUDE.md
