@@ -28,6 +28,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://recruiting:recruiting@postgres:5432/recruiting
     volumes:
       - ./data:/app/data
+      - hf_cache:/root/.cache/huggingface
     ports:
       - "8000:8000"
     depends_on:
@@ -48,3 +49,4 @@ services:
 
 volumes:
   postgres_data:
+  hf_cache:

@@ -12,15 +12,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     curl \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    fonts-liberation \
+    fonts-unifont \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 # Install CPU-only torch first to prevent pip from pulling in the full CUDA stack
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright Chromium browser
-RUN playwright install chromium --with-deps
+# Install Playwright Chromium browser (deps installed above, skip --with-deps)
+RUN playwright install chromium
 
 COPY . .
 

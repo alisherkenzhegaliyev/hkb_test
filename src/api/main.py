@@ -25,10 +25,19 @@ async def _email_poll_job() -> None:
         logger.info("Email poll job: processed %d new resumes", count)
 
 
+def _prewarm_bge() -> None:
+    from src.nlp.embeddings import get_model
+    get_model()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
     await create_tables()
     logger.info("Database tables ready")
+
+    # Load BGE-M3 in background thread — avoids blocking the event loop on first CV
+    asyncio.get_event_loop().run_in_executor(None, _prewarm_bge)
 
     if settings.imap_user and settings.imap_password:
         scheduler.add_job(
@@ -37,6 +46,7 @@ async def lifespan(app: FastAPI):
             minutes=settings.email_poll_interval,
             id="email_poll",
             replace_existing=True,
+            max_instances=3,
         )
         scheduler.start()
         logger.info("Email poller started — every %d minutes", settings.email_poll_interval)

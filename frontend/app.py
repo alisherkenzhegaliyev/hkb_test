@@ -170,14 +170,22 @@ with tab_upload:
         st.info("No candidates in the database yet.")
     else:
         for c in candidates[:20]:
-            skills_str = ", ".join(c.get("skills") or []) or "—"
+            skills = c.get("skills") or []
+            exp = c.get("experience_years")
             with st.expander(f"#{c.get('id')} — {c.get('name') or 'Unknown'} ({c.get('email') or '—'})"):
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Phone", c.get("phone") or "—")
-                exp = c.get("experience_years")
                 col2.metric("Experience", f"{exp:.1f} yrs" if exp is not None else "—")
                 col3.metric("Source", c.get("source_file") or "—")
-                st.markdown(f"**Skills:** {skills_str}")
+                if c.get("education"):
+                    st.markdown(f"**Education:** {c['education']}")
+                if skills:
+                    st.markdown("**Skills:** " + " · ".join(f"`{s}`" for s in skills))
+                else:
+                    st.markdown("**Skills:** —")
+                if c.get("raw_text"):
+                    with st.expander("Parsed text sent to matching"):
+                        st.text(c["raw_text"])
                 st.caption(f"Added: {str(c.get('created_at', ''))[:19]}")
 
 # ── TAB 3: MATCH CANDIDATES ──────────────────────────────────────────────────

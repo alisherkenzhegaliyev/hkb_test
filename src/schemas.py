@@ -11,6 +11,7 @@ class CandidateOut(BaseModel):
     skills: list
     experience_years: Optional[float]
     education: Optional[str]
+    raw_text: Optional[str]
     source_file: Optional[str]
     created_at: datetime
 
