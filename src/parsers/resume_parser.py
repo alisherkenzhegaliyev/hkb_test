@@ -4,7 +4,6 @@ import re
 from datetime import date
 from pathlib import Path
 
-from groq import Groq
 from docling.document_converter import DocumentConverter
 
 from src.config import settings
@@ -14,6 +13,16 @@ logger = logging.getLogger(__name__)
 _converter = DocumentConverter()
 _EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
 _PHONE_RE = re.compile(r"[\+\(]?[0-9][0-9\s\-\(\)]{7,}[0-9]")
+
+
+def _fix_unicode_escapes(text: str) -> str:
+    """Convert docling's /uniXXXX escape sequences back to actual characters."""
+    def _replace(m: re.Match) -> str:
+        try:
+            return chr(int(m.group(1), 16))
+        except (ValueError, OverflowError):
+            return m.group(0)
+    return re.sub(r"/uni([0-9A-Fa-f]{4})", _replace, text)
 
 _EXTRACTION_PROMPT = """\
 You are a resume parser. Today's date is {today}. Extract structured information from the resume text below.
@@ -44,7 +53,8 @@ def parse(file_path: str | Path) -> dict:
         logger.warning("docling failed for %s: %s — falling back to raw read", path, exc)
         markdown = _fallback_read(path)
 
-    extracted = _extract_with_groq(markdown)
+    markdown = _fix_unicode_escapes(markdown)
+    extracted = _extract_structured(markdown)
     extracted["raw_text"] = markdown
     logger.info(
         "=== PARSED CANDIDATE ===\n"
@@ -71,32 +81,41 @@ def _fallback_read(path: Path) -> str:
         return ""
 
 
-def _extract_with_groq(text: str) -> dict:
-    empty = {"name": None, "email": None, "phone": None, "skills": [], "experience_years": None, "education": None}
+def _extract_structured(text: str) -> dict:
+    if settings.openai_api_key:
+        return _extract_with_llm(text, provider="openai")
+    if settings.groq_api_key:
+        return _extract_with_llm(text, provider="groq")
+    logger.warning("No LLM API key configured — falling back to regex extraction")
+    return _extract_with_regex(text)
 
-    if not settings.groq_api_key:
-        logger.warning("GROQ_API_KEY not set — falling back to regex extraction")
-        return _extract_with_regex(text)
 
+def _extract_with_llm(text: str, provider: str) -> dict:
     try:
-        client = Groq(api_key=settings.groq_api_key)
+        if provider == "openai":
+            from openai import OpenAI
+            client = OpenAI(api_key=settings.openai_api_key)
+            model = settings.openai_model
+        else:
+            from groq import Groq
+            client = Groq(api_key=settings.groq_api_key)
+            model = settings.groq_model
+
         today = date.today().isoformat()
         prompt = _EXTRACTION_PROMPT.format(text=text, today=today)
-        logger.info("Groq extraction prompt (%d chars):\n%s", len(prompt), prompt)
         response = client.chat.completions.create(
-            model=settings.groq_model,
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
-            max_tokens=512,
+            max_tokens=1024,
         )
         raw = response.choices[0].message.content.strip()
-        logger.info("Groq raw response:\n%s", raw)
-        # Strip markdown code fences if the model wrapped the output
+        logger.info("%s extraction raw response:\n%s", provider, raw)
         if raw.startswith("```"):
             raw = re.sub(r"^```[a-z]*\n?", "", raw)
             raw = re.sub(r"\n?```$", "", raw).strip()
         data = json.loads(raw)
-        logger.info("Groq work_positions: %s", data.get("work_positions"))
+        logger.info("work_positions: %s", data.get("work_positions"))
         return {
             "name": data.get("name"),
             "email": data.get("email"),
@@ -106,7 +125,7 @@ def _extract_with_groq(text: str) -> dict:
             "education": data.get("education"),
         }
     except Exception as exc:
-        logger.warning("Groq extraction failed for resume: %s — falling back to regex", exc)
+        logger.warning("%s extraction failed: %s — falling back to regex", provider, exc)
         return _extract_with_regex(text)
 
 

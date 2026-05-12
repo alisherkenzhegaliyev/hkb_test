@@ -9,7 +9,7 @@ import streamlit as st
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 st.set_page_config(
-    page_title="AI Recruiting Agent — HCB",
+    page_title="AI Рекрутинг — HCB",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -23,9 +23,9 @@ def api_get(path: str, params: dict | None = None, timeout: int = 30):
         r.raise_for_status()
         return r.json(), None
     except requests.exceptions.ConnectionError:
-        return None, f"Cannot connect to API at {API_URL}"
+        return None, f"Нет подключения к API: {API_URL}"
     except requests.exceptions.Timeout:
-        return None, "Request timed out"
+        return None, "Превышено время ожидания запроса"
     except requests.exceptions.HTTPError as e:
         detail = ""
         try:
@@ -48,9 +48,9 @@ def api_post(path: str, json_data: dict | None = None, files=None, timeout: int 
         r.raise_for_status()
         return r.json(), None
     except requests.exceptions.ConnectionError:
-        return None, f"Cannot connect to API at {API_URL}"
+        return None, f"Нет подключения к API: {API_URL}"
     except requests.exceptions.Timeout:
-        return None, "Request timed out"
+        return None, "Превышено время ожидания запроса"
     except requests.exceptions.HTTPError as e:
         detail = ""
         try:
@@ -71,126 +71,126 @@ def score_bar(label: str, value: float) -> None:
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.title("AI Recruiting Agent")
-    st.caption("Home Credit Bank — Internal Tool")
+    st.title("AI Рекрутинг")
+    st.caption("Home Credit Bank — Внутренний инструмент")
     st.divider()
-    st.markdown(f"**Backend:** `{API_URL}`")
+    st.markdown(f"**Бэкенд:** `{API_URL}`")
 
     health, _err = api_get("/health", timeout=5)
     if health:
         st.success(
-            f"API online — {health.get('candidate_count', 0)} candidates, "
-            f"{health.get('vacancy_count', 0)} vacancies"
+            f"API работает — {health.get('candidate_count', 0)} кандидатов, "
+            f"{health.get('vacancy_count', 0)} вакансий"
         )
     else:
-        st.error("API offline")
+        st.error("API недоступен")
 
     st.divider()
-    st.markdown("**Sync vacancies from hh.kz**")
-    if st.button("Sync from hh.kz", use_container_width=True):
-        with st.spinner("Scraping hh.kz — this may take 30–60 s..."):
+    st.markdown("**Синхронизация вакансий с hh.kz**")
+    if st.button("Синхронизировать с hh.kz", use_container_width=True):
+        with st.spinner("Загрузка с hh.kz — может занять 30–60 сек..."):
             data, err = api_post("/vacancies/scrape", json_data={}, timeout=300)
         if err:
             st.error(err)
         else:
             st.success(
-                f"Scrape complete: {data.get('imported', 0)} new / "
-                f"{data.get('total', 0)} total vacancies."
+                f"Готово: {data.get('imported', 0)} новых / "
+                f"{data.get('total', 0)} всего вакансий."
             )
 
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
 
 tab_vacancies, tab_upload, tab_match, tab_status = st.tabs(
-    ["Vacancies", "Upload Resume", "Match Candidates", "Status"]
+    ["Вакансии", "Загрузить резюме", "Подбор кандидатов", "Статус"]
 )
 
 # ── TAB 1: VACANCIES ─────────────────────────────────────────────────────────
 with tab_vacancies:
-    st.header("Vacancy List")
-    st.caption("Vacancies scraped from hh.kz. Use 'Sync from hh.kz' in the sidebar to refresh.")
+    st.header("Список вакансий")
+    st.caption("Вакансии загружены с hh.kz. Используйте кнопку в боковой панели для обновления.")
 
     vacancies, err = api_get("/vacancies/")
     if err:
         st.error(err)
     elif not vacancies:
-        st.info("No vacancies yet. Use Sync from hh.kz in the sidebar.")
+        st.info("Вакансий пока нет. Нажмите «Синхронизировать с hh.kz» в боковой панели.")
     else:
         for v in vacancies:
             url = v.get("url") or ""
-            link = f"[Open on hh.kz]({url})" if url else "—"
-            with st.expander(f"#{v.get('id')} — {v.get('title', 'Untitled')}"):
-                st.markdown(f"**Link:** {link}")
-                st.markdown(f"**Scraped:** {str(v.get('scraped_at', ''))[:19]}")
+            link = f"[Открыть на hh.kz]({url})" if url else "—"
+            with st.expander(f"#{v.get('id')} — {v.get('title', 'Без названия')}"):
+                st.markdown(f"**Ссылка:** {link}")
+                st.markdown(f"**Загружено:** {str(v.get('scraped_at', ''))[:19]}")
                 meta = v.get("meta") or {}
                 if meta:
                     cols = st.columns(3)
                     if exp := meta.get("experience"):
-                        cols[0].markdown(f"**Experience:** {exp}")
+                        cols[0].markdown(f"**Опыт:** {exp}")
                     if sal := meta.get("salary"):
-                        cols[1].markdown(f"**Salary:** {sal}")
+                        cols[1].markdown(f"**Зарплата:** {sal}")
                     if conds := meta.get("conditions"):
-                        cols[2].markdown("**Conditions:** " + " · ".join(conds))
+                        cols[2].markdown("**Условия:** " + " · ".join(conds))
                 reqs = v.get("requirements") or []
                 if reqs:
-                    st.markdown("**Key skills:** " + " · ".join(f"`{r}`" for r in reqs))
+                    st.markdown("**Ключевые навыки:** " + " · ".join(f"`{r}`" for r in reqs))
                 desc = v.get("description", "")
                 if desc:
-                    st.markdown("**Description:**")
+                    st.markdown("**Описание:**")
                     st.write(desc)
-        st.caption(f"Total: {len(vacancies)} vacancies")
+        st.caption(f"Всего: {len(vacancies)} вакансий")
 
 # ── TAB 2: UPLOAD RESUME ─────────────────────────────────────────────────────
 with tab_upload:
-    st.header("Upload Resume")
-    uploaded = st.file_uploader("Choose a resume file (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
+    st.header("Загрузить резюме")
+    uploaded = st.file_uploader("Выберите файл резюме (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
     if uploaded is not None:
-        with st.spinner(f"Parsing {uploaded.name}..."):
+        with st.spinner(f"Обработка {uploaded.name}..."):
             files = {"file": (uploaded.name, uploaded.getvalue(), uploaded.type or "application/octet-stream")}
             data, err = api_post("/candidates/upload", files=files)
         if err:
-            st.error(f"Upload failed: {err}")
+            st.error(f"Ошибка загрузки: {err}")
         else:
-            st.success("Resume parsed and saved!")
+            st.success("Резюме обработано и сохранено!")
             col1, col2, col3 = st.columns(3)
-            col1.metric("Name", data.get("name") or "—")
+            col1.metric("Имя", data.get("name") or "—")
             col2.metric("Email", data.get("email") or "—")
             exp = data.get("experience_years")
-            col3.metric("Experience", f"{exp:.1f} yrs" if exp is not None else "—")
+            col3.metric("Опыт", f"{exp:.1f} лет" if exp is not None else "—")
             skills = data.get("skills") or []
             if skills:
-                st.markdown("**Extracted skills:** " + " · ".join(f"`{s}`" for s in skills))
+                st.markdown("**Извлечённые навыки:** " + " · ".join(f"`{s}`" for s in skills))
 
     st.divider()
-    st.subheader("Recent Candidates")
+    st.subheader("Недавние кандидаты")
     candidates, err = api_get("/candidates/")
     if err:
         st.error(err)
     elif not candidates:
-        st.info("No candidates in the database yet.")
+        st.info("В базе данных пока нет кандидатов.")
     else:
         for c in candidates[:20]:
             skills = c.get("skills") or []
             exp = c.get("experience_years")
-            with st.expander(f"#{c.get('id')} — {c.get('name') or 'Unknown'} ({c.get('email') or '—'})"):
+            with st.expander(f"#{c.get('id')} — {c.get('name') or 'Неизвестно'} ({c.get('email') or '—'})"):
                 col1, col2, col3 = st.columns(3)
-                col1.metric("Phone", c.get("phone") or "—")
-                col2.metric("Experience", f"{exp:.1f} yrs" if exp is not None else "—")
-                col3.metric("Source", c.get("source_file") or "—")
+                col1.metric("Телефон", c.get("phone") or "—")
+                col2.metric("Опыт", f"{exp:.1f} лет" if exp is not None else "—")
+                col3.metric("Файл", c.get("source_file") or "—")
                 if c.get("education"):
-                    st.markdown(f"**Education:** {c['education']}")
+                    st.markdown(f"**Образование:** {c['education']}")
                 if skills:
-                    st.markdown("**Skills:** " + " · ".join(f"`{s}`" for s in skills))
+                    st.markdown("**Навыки:** " + " · ".join(f"`{s}`" for s in skills))
                 else:
-                    st.markdown("**Skills:** —")
+                    st.markdown("**Навыки:** —")
                 if c.get("raw_text"):
-                    with st.expander("Parsed text sent to matching"):
+                    with st.expander("Текст резюме, отправляемый на матчинг"):
                         st.text(c["raw_text"])
-                st.caption(f"Added: {str(c.get('created_at', ''))[:19]}")
+                st.caption(f"Добавлен: {str(c.get('created_at', ''))[:19]}")
 
 # ── TAB 3: MATCH CANDIDATES ──────────────────────────────────────────────────
 with tab_match:
-    st.header("Match Candidates to a Vacancy")
+    st.header("Подбор кандидатов на вакансию")
 
     if "match_results" not in st.session_state:
         st.session_state.match_results = None
@@ -201,20 +201,20 @@ with tab_match:
     if err_v:
         st.error(err_v)
     elif not vacancies_for_match:
-        st.info("No vacancies available. Scrape some from hh.kz first.")
+        st.info("Вакансий нет. Сначала загрузите их с hh.kz.")
     else:
         vacancy_map = {f"[{v['id']}] {v['title']}": v["id"] for v in vacancies_for_match}
         col_left, col_right = st.columns([2, 1])
         with col_left:
-            selected_label = st.selectbox("Select vacancy", options=list(vacancy_map.keys()))
+            selected_label = st.selectbox("Выберите вакансию", options=list(vacancy_map.keys()))
             selected_job_id = vacancy_map[selected_label]
         with col_right:
-            method = st.radio("Matching method", options=["funnel", "semantic", "tfidf", "llm"])
-            top_k = st.slider("Top-K candidates", min_value=1, max_value=10, value=5)
+            method = st.radio("Метод подбора", options=["funnel", "semantic", "tfidf", "llm"])
+            top_k = st.slider("Топ-K кандидатов", min_value=1, max_value=10, value=5)
 
         st.divider()
-        if st.button("Find Top Candidates", type="primary", use_container_width=True):
-            with st.spinner(f"Running {method} matching — top {top_k}..."):
+        if st.button("Найти лучших кандидатов", type="primary", use_container_width=True):
+            with st.spinner(f"Запуск подбора методом «{method}» — топ {top_k}..."):
                 results_data, err_r = api_get(
                     "/recommendations/",
                     params={"job_id": selected_job_id, "method": method, "top_k": top_k},
@@ -225,19 +225,19 @@ with tab_match:
             st.session_state.match_method = method
 
         if st.session_state.match_error:
-            st.error(f"Matching failed: {st.session_state.match_error}")
+            st.error(f"Ошибка подбора: {st.session_state.match_error}")
         elif st.session_state.match_results is not None:
             results_data = st.session_state.match_results
             used_method = st.session_state.match_method
             match_results = results_data.get("results") or []
             if not match_results:
-                st.info("No candidates matched. Upload resumes first.")
+                st.info("Кандидаты не найдены. Сначала загрузите резюме.")
             else:
-                st.success(f"Found {len(match_results)} candidate(s) via **{used_method}** method.")
+                st.success(f"Найдено {len(match_results)} кандидат(ов) методом **{used_method}**.")
                 st.divider()
                 for rank, item in enumerate(match_results, start=1):
                     cand = item.get("candidate") or {}
-                    name = cand.get("name") or "Unknown"
+                    name = cand.get("name") or "Неизвестно"
                     email = cand.get("email") or "—"
                     tfidf_s = item.get("tfidf_score")
                     semantic_s = item.get("semantic_score")
@@ -251,12 +251,12 @@ with tab_match:
                         c1, c2 = st.columns([1, 2])
                         with c1:
                             st.markdown(f"**Email:** {email}")
-                            st.markdown(f"**Phone:** {cand.get('phone') or '—'}")
+                            st.markdown(f"**Телефон:** {cand.get('phone') or '—'}")
                             exp = cand.get("experience_years")
-                            st.markdown(f"**Experience:** {f'{exp:.1f} yrs' if exp is not None else '—'}")
+                            st.markdown(f"**Опыт:** {f'{exp:.1f} лет' if exp is not None else '—'}")
                             skills = cand.get("skills") or []
                             if skills:
-                                st.markdown("**Skills:** " + " · ".join(f"`{s}`" for s in skills[:10]))
+                                st.markdown("**Навыки:** " + " · ".join(f"`{s}`" for s in skills[:10]))
                         with c2:
                             if any(s is not None for s in [tfidf_s, semantic_s, llm_s]):
                                 cols = st.columns(3)
@@ -265,50 +265,56 @@ with tab_match:
                                         score_bar("TF-IDF", tfidf_s)
                                 if semantic_s is not None:
                                     with cols[1]:
-                                        score_bar("Semantic", semantic_s)
+                                        score_bar("Семантика", semantic_s)
                                 if llm_s is not None:
                                     with cols[2]:
                                         score_bar("LLM", llm_s)
 
                         if explanation or strengths or gaps:
-                            with st.expander("LLM Analysis — Strengths & Gaps"):
+                            with st.expander("Анализ LLM — сильные стороны и пробелы"):
                                 if explanation:
-                                    st.markdown("**Explanation:**")
+                                    st.markdown("**Пояснение:**")
                                     st.write(explanation)
                                 if strengths:
-                                    st.markdown("**Strengths:**")
+                                    st.markdown("**Сильные стороны:**")
                                     for s in strengths:
                                         st.markdown(f"- {s}")
                                 if gaps:
-                                    st.markdown("**Gaps:**")
+                                    st.markdown("**Пробелы:**")
                                     for g in gaps:
                                         st.markdown(f"- {g}")
+
+                        raw_text = cand.get("raw_text") or ""
+                        if raw_text:
+                            with st.expander("Текст резюме, отправленный на матчинг"):
+                                st.text(raw_text)
+
                         st.divider()
 
 # ── TAB 4: STATUS ────────────────────────────────────────────────────────────
 with tab_status:
-    st.header("System Status")
+    st.header("Статус системы")
 
-    if st.button("Refresh Status"):
+    if st.button("Обновить"):
         st.rerun()
 
     health, err = api_get("/health", timeout=10)
     if err:
-        st.error(f"Health check failed: {err}")
+        st.error(f"Ошибка проверки состояния: {err}")
     else:
-        st.success(f"API status: **{health.get('status', 'unknown').upper()}**")
+        st.success(f"Статус API: **{health.get('status', 'unknown').upper()}**")
         col1, col2, col3 = st.columns(3)
-        col1.metric("Candidates in DB", health.get("candidate_count", 0))
-        col2.metric("Vacancies in DB", health.get("vacancy_count", 0))
-        last = health.get("last_email_poll") or "Never"
-        col3.metric("Last Email Poll", str(last)[:19] if last != "Never" else "Never")
+        col1.metric("Кандидатов в БД", health.get("candidate_count", 0))
+        col2.metric("Вакансий в БД", health.get("vacancy_count", 0))
+        last = health.get("last_email_poll") or "Никогда"
+        col3.metric("Последний опрос почты", str(last)[:19] if last != "Никогда" else "Никогда")
 
         poller = health.get("email_poller_running", False)
         if poller:
-            st.info("Email poller is running.")
+            st.info("Опрос почты активен.")
         else:
-            st.warning("Email poller is not running (IMAP credentials not configured?).")
+            st.warning("Опрос почты не запущен (не настроены IMAP-данные?).")
 
         st.divider()
-        st.subheader("Raw Health Response")
+        st.subheader("Ответ сервера")
         st.json({"api_url": API_URL, **health})

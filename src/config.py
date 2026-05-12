@@ -12,9 +12,13 @@ class Settings(BaseSettings):
     imap_mailbox: str = "INBOX"
     email_poll_interval: int = 5  # minutes
 
-    # Groq
+    # Groq (kept for backward compat, not used if openai_api_key is set)
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
+
+    # OpenAI (takes priority over Groq for LLM matching)
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
 
     # Database
     database_url: str = "postgresql+asyncpg://recruiting:recruiting@postgres:5432/recruiting"

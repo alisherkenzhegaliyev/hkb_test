@@ -30,6 +30,7 @@ numpy==1.26.4
 
 # LLM
 groq==0.13.0
+openai>=1.30.0
 
 # Scheduling
 apscheduler==3.10.4
