@@ -33,7 +33,7 @@ class VacancyOut(BaseModel):
 
 class MatchResultOut(BaseModel):
     candidate_id: int
-    vacancy_id: int
+    vacancy_id: Optional[int]
     method: str
     tfidf_score: Optional[float]
     semantic_score: Optional[float]
@@ -45,7 +45,7 @@ class MatchResultOut(BaseModel):
 
 
 class RecommendationResponse(BaseModel):
-    vacancy_id: int
+    vacancy_id: Optional[int]
     method: str
     results: list[MatchResultOut]
 

@@ -1,125 +1,151 @@
-# AI Recruiting Agent — Home Credit Bank
+# AI Рекрутинговый Агент — Home Credit Bank
 
-End-to-end AI recruiting pipeline for **АО Home Credit Bank (ДБ АО «ForteBank»)**:
-- Auto-ingests resumes from email (IMAP) or manual upload
-- Scrapes live vacancies from hh.kz (employer ID 49971) via Playwright
-- Ranks candidates using a 3-stage funnel: TF-IDF → BGE-M3 semantic → Groq LLM
-- REST API (FastAPI) + interactive UI (Streamlit)
+Комплексный AI-пайплайн для подбора персонала в **АО Home Credit Bank (ДБ АО «ForteBank»)**:
+- Автоматически загружает резюме из почты (IMAP) или через ручную загрузку
+- Собирает актуальные вакансии с hh.kz (ID работодателя 49971) через Playwright
+- Ранжирует кандидатов с помощью 3-этапной воронки: TF-IDF → семантика BGE-M3 → OpenAI LLM
+- REST API (FastAPI) + интерактивный интерфейс (Streamlit)
 
-## Architecture
+## Скриншоты
+
+**Список вакансий** — загружены с hh.kz в реальном времени через Playwright:
+![Вакансии](docs/screenshots/vacancies.png)
+
+**Загрузка резюме** — загрузка файла с мгновенным отображением распознанного профиля кандидата:
+![Загрузка резюме](docs/screenshots/upload_resume.png)
+
+**Подбор кандидатов** — результат 3-этапной воронки с оценками TF-IDF / семантика / LLM и пояснением от LLM:
+![Подбор](docs/screenshots/matching.png)
+
+**Статус системы** — состояние API, счётчики БД, статус опроса почты:
+![Статус](docs/screenshots/status.png)
+
+**Почтовый ящик** — тестовые письма с PDF-резюме, автоматически загруженными через IMAP:
+![Почтовый ящик](docs/screenshots/email_inbox.png)
+
+**Docker-логи** — контейнер API: BGE-M3 готов, APScheduler запущен, IMAP-авторизация выполнена:
+![Docker Logs](docs/screenshots/docker_logs.png)
+
+---
+
+## Архитектура
 
 ```
-Email Inbox (IMAP)          hh.kz
+Почтовый ящик (IMAP)        hh.kz
        │                      │
        ▼                      ▼
-[Email Fetcher]        [Playwright Scraper]
+[Загрузка писем]       [Playwright-скрапер]
        │                      │
        ▼                      ▼
-[docling Parser]        [Vacancy DB]
+[Парсер docling]        [База вакансий]
        │
        ▼
-[Candidate DB (PostgreSQL)]
+[База кандидатов (PostgreSQL)]
        │
        ▼
-[3-Stage Matching Funnel]
+[3-этапная воронка подбора]
   1. TF-IDF cosine          (sklearn)
-  2. BGE-M3 semantic        (FlagEmbedding)
-  3. Groq LLM scoring       (llama-3.3-70b-versatile)
+  2. Семантика BGE-M3       (FlagEmbedding)
+  3. Оценка LLM OpenAI      (gpt-4o-mini; резерв: Groq llama-3.3-70b-versatile)
        │
        ▼
 [FastAPI] ──► [Streamlit UI]
 ```
 
-## Matching Funnel
+## Воронка подбора
 
-| Stage | Method | Default threshold | Purpose |
+| Этап | Метод | Порог по умолчанию | Назначение |
 |---|---|---|---|
-| 1 | TF-IDF cosine (sklearn) | ≥ 0.05 | Lexical filter — remove obvious mismatches fast |
-| 2 | BGE-M3 dense embeddings | ≥ 0.35 | Semantic relevance filter |
-| 3 | Groq LLaMA-3.3-70B | top-K | Deep reasoning with `{score, explanation, strengths, gaps}` |
+| 1 | TF-IDF cosine (sklearn) | ≥ 0.05 | Лексический фильтр — быстрое отсеивание явных несоответствий |
+| 2 | Плотные эмбеддинги BGE-M3 | ≥ 0.35 | Семантический фильтр релевантности |
+| 3 | OpenAI gpt-4o-mini (резерв: Groq) | топ-K | Глубокий анализ с возвратом `{score, explanation, strengths, gaps}` |
 
-Individual methods (`tfidf`, `semantic`, `llm`) can be used standalone via the `method` query param.
+Каждый метод (`tfidf`, `semantic`, `llm`) можно использовать отдельно через параметр `method`.
 
-## Quickstart
+## Быстрый старт
 
 ```bash
 cp .env.example .env
-# Fill in GROQ_API_KEY and optionally IMAP_* for email ingestion
+# Укажите OPENAI_API_KEY (основной LLM) или GROQ_API_KEY (резерв)
+# При необходимости настройте IMAP_* для загрузки резюме из почты
 docker-compose up --build
 ```
 
-- **API docs:** http://localhost:8000/docs
+- **Документация API:** http://localhost:8000/docs
 - **Streamlit UI:** http://localhost:8501
 
-> **Note on `make` commands:** The `Makefile` provides shortcuts for common operations but requires `make`, which is not available by default on Windows. Windows users should use **WSL** or **Git Bash**, or run the equivalent Docker commands directly (see below).
+> **Примечание про `make`:** `Makefile` предоставляет удобные сокращения, но требует утилиты `make`, которая по умолчанию недоступна на Windows. Пользователям Windows следует использовать **WSL** или **Git Bash**, либо запускать Docker-команды напрямую (см. ниже).
 
-## Common Commands
+## Команды
 
-| Task | Mac/Linux (`make`) | Windows / raw Docker |
+| Задача | Mac/Linux (`make`) | Windows / Docker напрямую |
 |---|---|---|
-| Start all services | `make up` | `docker-compose up -d` |
-| Build and start | `make build` | `docker-compose up --build` |
-| Stop all services | `make down` | `docker-compose down` |
-| Postgres only (local dev) | `make db` | `docker-compose up -d postgres` |
-| View API logs | `make logs-api` | `docker-compose logs -f api` |
-| View all logs | `make logs` | `docker-compose logs -f` |
-| Open API shell | `make shell-api` | `docker-compose exec api bash` |
+| Запустить все сервисы | `make up` | `docker-compose up -d` |
+| Собрать и запустить | `make build` | `docker-compose up --build` |
+| Остановить все сервисы | `make down` | `docker-compose down` |
+| Только Postgres (локальная разработка) | `make db` | `docker-compose up -d postgres` |
+| Логи API | `make logs-api` | `docker-compose logs -f api` |
+| Все логи | `make logs` | `docker-compose logs -f` |
+| Оболочка API-контейнера | `make shell-api` | `docker-compose exec api bash` |
 
-## Environment Variables
+## Переменные окружения
 
-| Variable | Required | Description |
+| Переменная | Обязательна | Описание |
 |---|---|---|
-| `GROQ_API_KEY` | **Yes** | Groq API key (get one at console.groq.com) |
-| `IMAP_HOST` | No | IMAP server (e.g. imap.gmail.com) |
-| `IMAP_USER` | No | Email address for resume inbox |
-| `IMAP_PASSWORD` | No | Email password / app password |
-| `TFIDF_THRESHOLD` | No | Stage 1 cutoff (default 0.05) |
-| `SEMANTIC_THRESHOLD` | No | Stage 2 cutoff (default 0.35) |
+| `OPENAI_API_KEY` | **Да** (основной) | Ключ OpenAI API — используется для парсинга и LLM-матчинга |
+| `OPENAI_MODEL` | Нет | Модель OpenAI (по умолчанию: `gpt-4o-mini`) |
+| `GROQ_API_KEY` | Нет (резерв) | Ключ Groq API — используется, если `OPENAI_API_KEY` не задан |
+| `GROQ_MODEL` | Нет | Модель Groq (по умолчанию: `llama-3.3-70b-versatile`) |
+| `IMAP_HOST` | Нет | IMAP-сервер (например, imap.gmail.com) |
+| `IMAP_USER` | Нет | Email-адрес почтового ящика для резюме |
+| `IMAP_PASSWORD` | Нет | Пароль от почты / пароль приложения |
+| `TFIDF_THRESHOLD` | Нет | Порог этапа 1 (по умолчанию 0.05) |
+| `SEMANTIC_THRESHOLD` | Нет | Порог этапа 2 (по умолчанию 0.35) |
 
-## API Reference
+## Справочник API
 
-| Method | Path | Description |
+| Метод | Путь | Описание |
 |---|---|---|
-| GET | `/health` | System status, candidate/vacancy counts, last email poll |
-| POST | `/candidates/upload` | Upload resume file (PDF/DOCX/TXT) |
-| GET | `/candidates/` | List all parsed candidates |
-| POST | `/vacancies/scrape` | Trigger hh.kz Playwright scrape |
-| GET | `/vacancies/` | List all vacancies |
-| GET | `/vacancies/{id}` | Get single vacancy |
-| GET | `/recommendations/` | Match candidates: `?job_id=1&method=funnel&top_k=5` |
+| GET | `/health` | Статус системы, счётчики кандидатов/вакансий, время последнего опроса почты |
+| POST | `/candidates/upload` | Загрузить файл резюме (PDF/DOCX/TXT) |
+| GET | `/candidates/` | Список всех распознанных кандидатов |
+| POST | `/vacancies/scrape` | Запустить скрапинг вакансий с hh.kz через Playwright |
+| GET | `/vacancies/` | Список всех вакансий |
+| GET | `/vacancies/{id}` | Получить одну вакансию |
+| GET | `/recommendations/` | Подобрать кандидатов: `?job_id=1&method=funnel&top_k=5` или `?vacancy_text=...&method=funnel` |
 
-## curl Examples
+## Примеры curl
 
 ```bash
-# Health check
+# Проверка состояния
 curl http://localhost:8000/health
 
-# Upload a resume
+# Загрузить резюме
 curl -X POST http://localhost:8000/candidates/upload \
   -F "file=@candidate_resume.pdf"
 
-# Scrape hh.kz vacancies
+# Запустить скрапинг вакансий hh.kz
 curl -X POST http://localhost:8000/vacancies/scrape
 
-# Get top-5 candidates (3-stage funnel) for vacancy ID 1
+# Топ-5 кандидатов (3-этапная воронка) для вакансии ID 1
 curl "http://localhost:8000/recommendations/?job_id=1&method=funnel&top_k=5"
 
-# Semantic-only matching
+# Только семантический матчинг
 curl "http://localhost:8000/recommendations/?job_id=1&method=semantic&top_k=10"
 ```
 
-## Tech Stack
+## Технологический стек
 
-| Component | Technology |
+| Компонент | Технология |
 |---|---|
-| Resume parsing | `docling` (IBM) — handles scanned PDFs, multi-column, Cyrillic OCR |
-| Vacancy scraping | `playwright` — bypasses hh.kz DDoS Guard (API returns 403) |
-| Embeddings | `BAAI/bge-m3` via FlagEmbedding — best <1B retrieval model on RTEB benchmark |
+| Парсинг резюме | `docling` (IBM) — поддержка сканированных PDF, многоколоночных и кириллических документов |
+| Скрапинг вакансий | `playwright` — обход DDoS Guard hh.kz (API возвращает 403) |
+| Эмбеддинги | `BAAI/bge-m3` через FlagEmbedding — лучшая модель <1B на бенчмарке RTEB |
 | TF-IDF | `scikit-learn` TfidfVectorizer |
-| LLM | `groq` SDK — llama-3.3-70b-versatile |
-| Database | PostgreSQL 16 + SQLAlchemy async (asyncpg) |
+| LLM | `openai` SDK — gpt-4o-mini (основной); `groq` SDK — llama-3.3-70b-versatile (резерв) |
+| База данных | PostgreSQL 16 + SQLAlchemy async (asyncpg) |
 | API | FastAPI + uvicorn |
-| Frontend | Streamlit |
-| Email | `imap-tools` (IMAP IDLE polling) |
-| Scheduling | APScheduler 3.x |
-| Container | Docker Compose |
+| Фронтенд | Streamlit |
+| Почта | `imap-tools` (IMAP-опрос) |
+| Планировщик | APScheduler 3.x |
+| Контейнеризация | Docker Compose |

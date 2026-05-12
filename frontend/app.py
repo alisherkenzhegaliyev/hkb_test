@@ -197,29 +197,53 @@ with tab_match:
         st.session_state.match_error = None
         st.session_state.match_method = None
 
-    vacancies_for_match, err_v = api_get("/vacancies/")
-    if err_v:
-        st.error(err_v)
-    elif not vacancies_for_match:
-        st.info("Вакансий нет. Сначала загрузите их с hh.kz.")
-    else:
-        vacancy_map = {f"[{v['id']}] {v['title']}": v["id"] for v in vacancies_for_match}
-        col_left, col_right = st.columns([2, 1])
-        with col_left:
-            selected_label = st.selectbox("Выберите вакансию", options=list(vacancy_map.keys()))
-            selected_job_id = vacancy_map[selected_label]
-        with col_right:
-            method = st.radio("Метод подбора", options=["funnel", "semantic", "tfidf", "llm"])
-            top_k = st.slider("Топ-K кандидатов", min_value=1, max_value=10, value=5)
+    input_mode = st.radio(
+        "Способ задания вакансии",
+        options=["Выбрать из базы", "Ввести текст вакансии"],
+        horizontal=True,
+    )
 
-        st.divider()
-        if st.button("Найти лучших кандидатов", type="primary", use_container_width=True):
-            with st.spinner(f"Запуск подбора методом «{method}» — топ {top_k}..."):
-                results_data, err_r = api_get(
-                    "/recommendations/",
-                    params={"job_id": selected_job_id, "method": method, "top_k": top_k},
-                    timeout=180,
-                )
+    col_left, col_right = st.columns([2, 1])
+    with col_right:
+        method = st.radio("Метод подбора", options=["funnel", "semantic", "tfidf", "llm"])
+        top_k = st.slider("Топ-K кандидатов", min_value=1, max_value=10, value=5)
+
+    selected_job_id = None
+    custom_vacancy_text = None
+
+    if input_mode == "Выбрать из базы":
+        vacancies_for_match, err_v = api_get("/vacancies/")
+        if err_v:
+            st.error(err_v)
+        elif not vacancies_for_match:
+            st.info("Вакансий нет. Сначала загрузите их с hh.kz.")
+        else:
+            vacancy_map = {f"[{v['id']}] {v['title']}": v["id"] for v in vacancies_for_match}
+            with col_left:
+                selected_label = st.selectbox("Выберите вакансию", options=list(vacancy_map.keys()))
+                selected_job_id = vacancy_map[selected_label]
+    else:
+        with col_left:
+            custom_vacancy_text = st.text_area(
+                "Текст вакансии",
+                placeholder="Вставьте описание вакансии, требования к кандидату...",
+                height=200,
+            )
+
+    st.divider()
+    can_run = (selected_job_id is not None) or (custom_vacancy_text and custom_vacancy_text.strip())
+    if st.button("Найти лучших кандидатов", type="primary", use_container_width=True, disabled=not can_run):
+        params: dict = {"method": method, "top_k": top_k}
+        if selected_job_id is not None:
+            params["job_id"] = selected_job_id
+        else:
+            params["vacancy_text"] = custom_vacancy_text.strip()
+        with st.spinner(f"Запуск подбора методом «{method}» — топ {top_k}..."):
+            results_data, err_r = api_get(
+                "/recommendations/",
+                params=params,
+                timeout=180,
+            )
             st.session_state.match_error = err_r
             st.session_state.match_results = results_data
             st.session_state.match_method = method

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -22,7 +23,8 @@ VALID_METHODS = {"funnel", "tfidf", "semantic", "llm"}
 
 @router.get("/", response_model=RecommendationResponse)
 async def get_recommendations(
-    job_id: int = Query(..., description="Vacancy ID"),
+    job_id: Optional[int] = Query(None, description="Vacancy ID from DB"),
+    vacancy_text: Optional[str] = Query(None, description="Raw vacancy text (alternative to job_id)"),
     method: str = Query("funnel", description="funnel | tfidf | semantic | llm"),
     top_k: int = Query(5, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
@@ -33,10 +35,33 @@ async def get_recommendations(
             detail=f"Invalid method '{method}'. Choose from: {sorted(VALID_METHODS)}",
         )
 
-    vac_result = await db.execute(select(Vacancy).where(Vacancy.id == job_id))
-    vacancy = vac_result.scalar_one_or_none()
-    if vacancy is None:
-        raise HTTPException(status_code=404, detail=f"Vacancy {job_id} not found")
+    if job_id is None and not vacancy_text:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide either job_id or vacancy_text",
+        )
+
+    resolved_job_id: Optional[int] = None
+
+    if job_id is not None:
+        vac_result = await db.execute(select(Vacancy).where(Vacancy.id == job_id))
+        vacancy = vac_result.scalar_one_or_none()
+        if vacancy is None:
+            raise HTTPException(status_code=404, detail=f"Vacancy {job_id} not found")
+        resolved_job_id = job_id
+        vacancy_dict = {
+            "id": vacancy.id,
+            "title": vacancy.title,
+            "description": vacancy.description,
+            "requirements": vacancy.requirements or [],
+        }
+    else:
+        vacancy_dict = {
+            "id": None,
+            "title": "Custom vacancy",
+            "description": vacancy_text,
+            "requirements": [],
+        }
 
     cand_result = await db.execute(select(Candidate))
     all_candidates = [
@@ -55,14 +80,7 @@ async def get_recommendations(
     ]
 
     if not all_candidates:
-        return RecommendationResponse(results=[], method=method, vacancy_id=job_id)
-
-    vacancy_dict = {
-        "id": vacancy.id,
-        "title": vacancy.title,
-        "description": vacancy.description,
-        "requirements": vacancy.requirements or [],
-    }
+        return RecommendationResponse(results=[], method=method, vacancy_id=resolved_job_id)
 
     if method == "funnel":
         ranked = await run_funnel(
@@ -82,23 +100,24 @@ async def get_recommendations(
 
     results: list[MatchResultOut] = []
     for cand_dict in ranked:
-        mr = MatchResult(
-            candidate_id=cand_dict["id"],
-            vacancy_id=job_id,
-            tfidf_score=cand_dict.get("tfidf_score"),
-            semantic_score=cand_dict.get("semantic_score"),
-            llm_score=cand_dict.get("llm_score"),
-            llm_explanation=cand_dict.get("llm_explanation"),
-            strengths=cand_dict.get("strengths", []),
-            gaps=cand_dict.get("gaps", []),
-            method=method,
-            created_at=datetime.now(timezone.utc),
-        )
-        db.add(mr)
+        if resolved_job_id is not None:
+            mr = MatchResult(
+                candidate_id=cand_dict["id"],
+                vacancy_id=resolved_job_id,
+                tfidf_score=cand_dict.get("tfidf_score"),
+                semantic_score=cand_dict.get("semantic_score"),
+                llm_score=cand_dict.get("llm_score"),
+                llm_explanation=cand_dict.get("llm_explanation"),
+                strengths=cand_dict.get("strengths", []),
+                gaps=cand_dict.get("gaps", []),
+                method=method,
+                created_at=datetime.now(timezone.utc),
+            )
+            db.add(mr)
         results.append(
             MatchResultOut(
                 candidate_id=cand_dict["id"],
-                vacancy_id=job_id,
+                vacancy_id=resolved_job_id,
                 tfidf_score=cand_dict.get("tfidf_score"),
                 semantic_score=cand_dict.get("semantic_score"),
                 llm_score=cand_dict.get("llm_score"),
@@ -110,5 +129,6 @@ async def get_recommendations(
             )
         )
 
-    await db.commit()
-    return RecommendationResponse(results=results, method=method, vacancy_id=job_id)
+    if resolved_job_id is not None:
+        await db.commit()
+    return RecommendationResponse(results=results, method=method, vacancy_id=resolved_job_id)
